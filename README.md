@@ -6,4 +6,6 @@ This repository contains basic Machine learning projects, hackathons that I was 
 
 These projects and artifacts are part of my data science learning.
 
-
+Zomato
+HFresh
+Flix
