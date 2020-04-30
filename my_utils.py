@@ -63,75 +63,101 @@ def chi2test(df, target, cat_cols=None):
         print('\n')
         
         
-#sklearn
+############################################
+#--------------CLASSIFICATION--------------#
+############################################
+
 from sklearn import linear_model
 from sklearn import ensemble
 from sklearn import metrics
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
 
-def adjusted_preds(y_pred_proba, t):
-    return [1 if y >= t else 0 for y in y_pred_proba]
-
-def optim_f1(pred_probs, actuals):
-    model_f1_score={}
-    y_acts = actuals
-    for thresh in np.arange(0.3, 0.5, 0.1):
-        thresh = np.round(thresh, 2)        
-        y_pred_adj = adjusted_preds(pred_probs, thresh)
-        model_f1_score[thresh]= metrics.f1_score(y_acts, y_pred_adj)
-    model_cutoff=max(model_f1_score, key=model_f1_score.get)
-    print("Max F1 score  is {1} found at threshold {0}".format(model_cutoff, model_f1_score[model_cutoff]))
-    return model_cutoff
-
-def get_metrics(actuals, preds):
-    acc = metrics.accuracy_score(actuals, preds)
-    recall = metrics.recall_score(actuals, preds)
-    precision = metrics.precision_score(actuals, preds)
-    f1 = metrics.f1_score(actuals, preds)        
-    return acc, recall, precision, f1
-
-def classification_metrics(x, y, model, multi_class = False):
-    actuals = y
-    preds = model.predict(x)
+class ClassificationMvp():
+    
+    def __init__(self, X, y, multi_class=False):
         
-    if multi_class:
+        self.train_X, self.test_X, self.train_y, self.test_y = train_test_split(X, y, test_size=0.2, random_state=32)
+                                                                               
+        self.multi_class = multi_class
+        if self.multi_class:
+            self.model = linear_model.LogisticRegression(multi_class='ovr')
+        else:
+            self.model = ensemble.RandomForestClassifier()
+        self.model.fit(self.train_X, self.train_y)
+        
+    def get_splits(self):
+        return self.train_X, self.test_X, self.train_y, self.test_y
+    
+    def trained_model(self):
+        return self.model
+    
+    def adjusted_preds(y_pred_proba, t):
+        return [1 if y >= t else 0 for y in y_pred_proba]
+
+    def optim_f1(actuals, pred_probs):
+        model_f1_score={}
+        y_acts = actuals
+        for thresh in np.arange(0.3, 0.5, 0.1):
+            thresh = np.round(thresh, 2)        
+            y_pred_adj = adjusted_preds(pred_probs, thresh)
+            model_f1_score[thresh]= metrics.f1_score(y_acts, y_pred_adj)
+        model_cutoff=max(model_f1_score, key=model_f1_score.get)
+        print("Max F1 score  is {1} found at threshold {0}".format(model_cutoff, model_f1_score[model_cutoff]))
+        return model_cutoff
+    
+    def get_metrics(self, actuals, preds):
         acc = metrics.accuracy_score(actuals, preds)
-        print("Confusion Matrix:")
-        print(metrics.confusion_matrix(actuals, preds))
-        print("Accuracy :",acc)
-        print("Classification Report:")
-        print(metrics.classification_report(actuals, preds, digits=3))
-        pred_probs = model.predict_proba(x)
-        
-    else:
-        acc, recall, precision, f1 = get_metrics(actuals, preds)
+        recall = metrics.recall_score(actuals, preds)
+        precision = metrics.precision_score(actuals, preds)
+        f1 = metrics.f1_score(actuals, preds) 
         print("Confusion Matrix:")
         print(metrics.confusion_matrix(actuals, preds))
         print("Accuracy:",acc," | Recall:",recall," | Precision :",precision, " | f1:", f1)  
-        
-        pred_probs = model.predict_proba(x)[:,1]
-        optimal_threshold = optim_f1(pred_probs, actuals)
-        preds_adj = adjusted_preds(pred_probs, optimal_threshold)
-        
-        new_acc, new_recall, new_precision, new_f1 = get_metrics(actuals, preds_adj)
-        print('Adjusted to optimal threshold')
-        print(metrics.confusion_matrix(actuals, preds_adj))
-        print("Accuracy:",new_acc," | Recall:",new_recall," | Precision:",new_precision, " | f1:", new_f1)
-        
-    return pred_probs
-
-def classification_mvp_model(X, y, multi_class = False):
     
-    train_x, test_x, train_y, test_y = train_test_split(X, y, test_size=.3, random_state=32)
-
-    if multi_class:
-        model = linear_model.LogisticRegression(multi_class='ovr')
+    def multiclass_metrics(self, actuals, preds):
+        acc = metrics.accuracy_score(actuals, preds)
+        print("Accuracy :",acc)
+        print("Confusion Matrix:")
+        print(metrics.confusion_matrix(actuals, preds))
+        print("Classification Report:")
+        print(metrics.classification_report(actuals, preds, digits=3))
         
-    else:
-        model = ensemble.RandomForestClassifier()
+    def classification(self, adjusted=False):
+        tr_actuals = self.train_y
+        tr_preds = self.model.predict(self.train_X)
         
-    model.fit(train_x, train_y)    
-    pred_probs = classification_metrics(train_x, train_y, model, multi_class)
-    
-    return pred_probs
+        test_actuals = self.test_y
+        test_preds = self.model.predict(self.test_X)
+        
+        if self.multi_class:
+            print("Train Metrics:\n")
+            self.multiclass_metrics(tr_actuals, tr_preds)
+            pred_probs = self.model.predict_proba(self.train_X)
+                        
+            print("Test Metrics:\n")
+            self.multiclass_metrics(test_actuals, test_preds)
+            
+        else:
+            if adjusted:
+                print("Train Metrics:\n")
+                self.get_metrics(tr_actuals, tr_preds)
+                
+                #get optimal threshold based on optimal F1
+                tr_pred_probs = self.model.predict_proba(self.train_X)[:,1]
+                test_pred_probs = self.model.predict_proba(self.test_X)[:,1]
+                optimal_threshold = self.optim_f1(tr_actuals, tr_pred_probs)
+                
+                print('Train Metrics with Adjusted threshold:\n')
+                tr_preds_adjusted = self.adjusted_preds(tr_pred_probs, optimal_threshold)
+                self.get_metrics(tr_acutals, tr_preds_adjusted)
+            
+                print('Test Metrics with Adjusted threshold:\n')
+                test_preds_adjusted = self.adjusted_preds(test_preds, optimal_threshold)
+                self.get_metrics(test_acutals, test_preds_adjusted)
+            else:
+                print("Train Metrics:\n")
+                self.get_metrics(tr_actuals, tr_preds)
+                
+                print("Test Metrics:\n")
+                self.get_metrics(test_actuals, test_preds)
+                
